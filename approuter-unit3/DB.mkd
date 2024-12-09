@@ -1,0 +1,128 @@
+İlk kod parçası, bir "yemek paylaşma" uygulamasında, kullanıcıdan alınan bir yemeğin veritabanına kaydedilmesi ve yemeğe ait bir görüntünün dosya sistemine yüklenmesi işlevini gerçekleştirir. Aşağıda adım adım açıklıyorum:
+
+---
+
+### **1. `meal.slug` Oluşturulması**
+
+```javascript
+meal.slug = slugify(meal.title, { lower: true });
+```
+
+- **Amaç**: `slugify` ile yemeğin başlığı (örneğin: "Delicious Pasta") okunabilir ve URL dostu bir formata dönüştürülüyor (örneğin: "delicious-pasta").
+- **Kullanım**: Bu `slug`, hem dosya ismi oluşturulurken hem de yemeği tanımlamak için kullanılır.
+
+---
+
+### **2. Güvenlik Kontrolü**
+
+```javascript
+meal.instructions = xss(meal.instructions);
+```
+
+- **Amaç**: Kullanıcıdan gelen `instructions` (talimatlar) alanını `xss` (Cross-Site Scripting) kütüphanesi ile temizleyerek zararlı kod parçalarını engellemek.
+- **Önemi**: Kullanıcılar form girişi aracılığıyla zararlı JavaScript kodu ekleyebilir; bu işlem bunu önler.
+
+---
+
+### **3. Dosya İsminin Oluşturulması**
+
+```javascript
+const extension = meal.image.name.split(".").pop();
+const fileName = `${meal.slug}.${extension}`;
+```
+
+- **Amaç**: Kullanıcının yüklediği görüntünün uzantısını (`jpg`, `png`, vb.) alarak, benzersiz bir dosya ismi oluşturmak.
+- **Örnek**:
+  - Görüntü adı: `pasta.jpg`
+  - Oluşturulan dosya ismi: `delicious-pasta.jpg`
+
+---
+
+### **4. Görüntünün Dosya Sistemine Kaydedilmesi**
+
+```javascript
+const stream = fs.createWriteStream(`public/assets/${fileName}`);
+const bufferedImage = await meal.image.arrayBuffer();
+
+stream.write(Buffer.from(bufferedImage), (error) => {
+  if (error) {
+    throw new Error("Saving image failed");
+  }
+});
+```
+
+- **Amaç**: Kullanıcının yüklediği görüntüyü sunucunun dosya sistemine kaydetmek.
+- **Adımlar**:
+
+  1. `fs.createWriteStream` ile hedef dosya yolunda bir yazma akışı (`stream`) oluşturulur.
+  2. `meal.image.arrayBuffer()` ile görüntü bir `Buffer`'a dönüştürülür.
+  3. `stream.write(Buffer.from(bufferedImage))` ile bu veri dosyaya yazılır.
+  4. Hata oluşursa `error` üzerinden yakalanır ve uygun hata mesajı fırlatılır.
+
+- **Hedef Dosya Yolu**: `public/assets/` dizini.
+- **Kaydedilen Dosya Adı**: `delicious-pasta.jpg` gibi bir isim.
+
+---
+
+### **5. Yemeğin Veritabanına Kaydedilmesi**
+
+```javascript
+meal.image = `/assets/${fileName}`;
+
+db.prepare(
+  `
+  INSERT INTO meals
+  (title, summary, insturctions, creator, creator_email, image, slug)
+  VALUES (
+    @title,
+    @summary,
+    @insturctions,
+    @creator,
+    @creator_email,
+    @image,
+    @slug
+  )
+  `
+).run(meal);
+```
+
+- **Amaç**: Yemeği veritabanına kaydetmek.
+- **Adımlar**:
+
+  1. `db.prepare` ile bir SQL sorgusu hazırlanır:
+     - `INSERT INTO meals`: Veritabanındaki `meals` tablosuna bir satır eklemek için kullanılır.
+     - `VALUES`: Kullanıcının sağladığı veriler buraya eklenir.
+  2. `meal` nesnesi, SQL sorgusundaki değişkenler (`@title`, `@summary`, vb.) ile eşleştirilir.
+
+- **Kaydedilen Alanlar**:
+  - `title`: Yemeğin başlığı.
+  - `summary`: Kısa bir açıklama.
+  - `instructions`: Yemeğin nasıl yapılacağına dair talimatlar.
+  - `creator`: Yemeği paylaşan kişinin adı.
+  - `creator_email`: Yemeği paylaşan kişinin e-posta adresi.
+  - `image`: Kaydedilen dosyanın yolu (`/assets/delicious-pasta.jpg`).
+  - `slug`: Yemeğin benzersiz bir kimliği (örneğin: "delicious-pasta").
+
+---
+
+### **Genel İş Akışı**
+
+1. Kullanıcı bir yemek paylaşma formu doldurur ve bir görüntü yükler.
+2. `saveMeal` fonksiyonu:
+   - Yemeğin başlığından bir `slug` oluşturur.
+   - Görüntüyü belirlenen dizine kaydeder.
+   - Yemeği veritabanına ekler.
+
+---
+
+### **Notlar**
+
+- **Güvenlik**:
+  - `xss` ile talimatlar temizleniyor, ancak diğer alanlarda da bu kontrol yapılabilir.
+  - Görüntü yükleme sırasında dosya boyutu ve türü kontrol edilmelidir.
+- **Dizin Kontrolü**:
+  - `public/assets/` dizininin var olduğundan ve yazılabilir olduğundan emin olun.
+- **Veritabanı Bağlantısı**:
+  - `db.prepare` SQLite gibi bir veritabanına sorgu göndermek için kullanılıyor.
+
+Bu kod, bir yemek paylaşım uygulamasının temel dosya ve veritabanı kaydetme işlevini sağlar. Eğer daha fazla detay gerekirse, sorabilirsiniz.
